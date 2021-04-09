@@ -33,6 +33,7 @@
 #define RISCV_CPU_TYPE_SUFFIX "-" TYPE_RISCV_CPU
 #define RISCV_CPU_TYPE_NAME(name) (name RISCV_CPU_TYPE_SUFFIX)
 #define CPU_RESOLVING_TYPE TYPE_RISCV_CPU
+#define CPU_INTERRUPT_CLIC CPU_INTERRUPT_TGT_EXT_0
 
 #define TYPE_RISCV_CPU_ANY              RISCV_CPU_TYPE_NAME("any")
 #define TYPE_RISCV_CPU_BASE32           RISCV_CPU_TYPE_NAME("rv32")
@@ -44,7 +45,29 @@
 #define TYPE_RISCV_CPU_SIFIVE_E51       RISCV_CPU_TYPE_NAME("sifive-e51")
 #define TYPE_RISCV_CPU_SIFIVE_U34       RISCV_CPU_TYPE_NAME("sifive-u34")
 #define TYPE_RISCV_CPU_SIFIVE_U54       RISCV_CPU_TYPE_NAME("sifive-u54")
-
+#define TYPE_RISCV_CPU_E902             RISCV_CPU_TYPE_NAME("e902")
+#define TYPE_RISCV_CPU_E902T            RISCV_CPU_TYPE_NAME("e902t")
+#define TYPE_RISCV_CPU_E902M            RISCV_CPU_TYPE_NAME("e902m")
+#define TYPE_RISCV_CPU_E902MT           RISCV_CPU_TYPE_NAME("e902mt")
+#define TYPE_RISCV_CPU_E906             RISCV_CPU_TYPE_NAME("e906")
+#define TYPE_RISCV_CPU_E906F            RISCV_CPU_TYPE_NAME("e906f")
+#define TYPE_RISCV_CPU_E906FD           RISCV_CPU_TYPE_NAME("e906fd")
+#define TYPE_RISCV_CPU_E906FDP          RISCV_CPU_TYPE_NAME("e906fdp")
+#define TYPE_RISCV_CPU_E906P            RISCV_CPU_TYPE_NAME("e906p")
+#define TYPE_RISCV_CPU_E906FP           RISCV_CPU_TYPE_NAME("e906fp")
+#define TYPE_RISCV_CPU_E907             RISCV_CPU_TYPE_NAME("e907")
+#define TYPE_RISCV_CPU_E907F            RISCV_CPU_TYPE_NAME("e907f")
+#define TYPE_RISCV_CPU_E907FD           RISCV_CPU_TYPE_NAME("e907fd")
+#define TYPE_RISCV_CPU_E907FDP          RISCV_CPU_TYPE_NAME("e907fdp")
+#define TYPE_RISCV_CPU_E907P            RISCV_CPU_TYPE_NAME("e907p")
+#define TYPE_RISCV_CPU_E907FP           RISCV_CPU_TYPE_NAME("e907fp")
+#define TYPE_RISCV_CPU_C910             RISCV_CPU_TYPE_NAME("c910")
+#define TYPE_RISCV_CPU_C910V            RISCV_CPU_TYPE_NAME("c910v")
+#define TYPE_RISCV_CPU_C920             RISCV_CPU_TYPE_NAME("c920")
+#define TYPE_RISCV_CPU_C906             RISCV_CPU_TYPE_NAME("c906")
+#define TYPE_RISCV_CPU_C906FD           RISCV_CPU_TYPE_NAME("c906fd")
+#define TYPE_RISCV_CPU_C906FDV          RISCV_CPU_TYPE_NAME("c906fdv")
+ 
 #if defined(TARGET_RISCV32)
 # define TYPE_RISCV_CPU_BASE            TYPE_RISCV_CPU_BASE32
 #elif defined(TARGET_RISCV64)
@@ -63,11 +86,15 @@
 #define RVF RV('F')
 #define RVD RV('D')
 #define RVV RV('V')
+#define RVP RV('P')
 #define RVC RV('C')
 #define RVS RV('S')
 #define RVU RV('U')
 #define RVH RV('H')
 #define RVB RV('B')
+
+/* ['A' + 26, (TARGET_LONG_BITS - 2)) are used for non standard extensions */
+#define RVXTHEAD RV('A' + 26)
 
 /* S extension denotes that Supervisor mode exists, however it is possible
    to have a core that support S mode but does not have an MMU and there
@@ -85,6 +112,7 @@ enum {
 
 #define BEXT_VERSION_0_93_0 0x00009300
 #define VEXT_VERSION_0_07_1 0x00000701
+#define PEXT_VERSION_0_09_4 0x00000904
 
 enum {
     TRANSLATE_SUCCESS,
@@ -96,6 +124,24 @@ enum {
 #define MMU_USER_IDX 3
 
 #define MAX_RISCV_PMPS (16)
+
+/* MMU MCIR bit MASK */
+#define CSKY_SMCIR_TLBP_SHIFT        31
+#define CSKY_SMCIR_TLBP_MASK         (1 << CSKY_SMCIR_TLBP_SHIFT)
+#define CSKY_SMCIR_TLBR_SHIFT        30
+#define CSKY_SMCIR_TLBR_MASK         (1 << CSKY_SMCIR_TLBR_SHIFT)
+#define CSKY_SMCIR_TLBWI_SHIFT       29
+#define CSKY_SMCIR_TLBWI_MASK        (1 << CSKY_SMCIR_TLBWI_SHIFT)
+#define CSKY_SMCIR_TLBWR_SHIFT       28
+#define CSKY_SMCIR_TLBWR_MASK        (1 << CSKY_SMCIR_TLBWR_SHIFT)
+#define CSKY_SMCIR_TLBINV_SHIFT      27
+#define CSKY_SMCIR_TLBINV_MASK       (1 << CSKY_SMCIR_TLBINV_SHIFT)
+#define CSKY_SMCIR_TLBINV_ALL_SHIFT  26
+#define CSKY_SMCIR_TLBINV_ALL_MASK   (1 << CSKY_SMCIR_TLBINV_ALL_SHIFT)
+#define CSKY_SMCIR_TLBINV_IDX_SHIFT  25
+#define CSKY_SMCIR_TLBINV_IDX_MASK   (1 << CSKY_SMCIR_TLBINV_IDX_SHIFT)
+#define CSKY_SMCIR_TTLBINV_ALL_SHIFT 24
+#define CSKY_SMCIR_TTLBINV_ALL_MASK  (1 << CSKY_SMCIR_TTLBINV_ALL_SHIFT)
 
 typedef struct CPURISCVState CPURISCVState;
 
@@ -135,6 +181,7 @@ struct CPURISCVState {
     target_ulong priv_ver;
     target_ulong bext_ver;
     target_ulong vext_ver;
+    target_ulong pext_ver;
     target_ulong misa;
     target_ulong misa_mask;
 
@@ -160,6 +207,9 @@ struct CPURISCVState {
     target_ulong mip;
 
     uint32_t miclaim;
+    uint32_t mintstatus; /* clic-spec */
+    target_ulong mintthresh; /* clic-spec */
+    target_ulong mclicbase; /* clic-spec */
 
     target_ulong mie;
     target_ulong mideleg;
@@ -169,10 +219,13 @@ struct CPURISCVState {
     target_ulong medeleg;
 
     target_ulong stvec;
+    target_ulong stvt; /* clic-spec */
     target_ulong sepc;
     target_ulong scause;
+    target_ulong sintthresh; /* clic-spec */
 
     target_ulong mtvec;
+    target_ulong mtvt; /* clic-spec */
     target_ulong mepc;
     target_ulong mcause;
     target_ulong mtval;  /* since: priv-1.10.0 */
@@ -237,12 +290,32 @@ struct CPURISCVState {
 
     /* True if in debugger mode.  */
     bool debugger;
+
+    /* csky c910 extends */
+    uint64_t mxstatus;
+    uint64_t mrmr;
+    uint64_t mrvbr;
+    uint64_t cpuid;
+    uint64_t sxstatus;
+    uint64_t smcir;
+    uint64_t smir;
+    uint64_t smlo0;
+    uint64_t smeh;
+    /* csky e906 extends */
+    uint64_t mexstatus;
+
+    CPURISCVState * next_cpu;
+    bool     in_reset;
+
 #endif
 
+    uint64_t elf_start;
     float_status fp_status;
 
     /* Fields from here on are preserved across CPU reset. */
     QEMUTimer *timer; /* Internal timer */
+    void *clic;       /* clic interrupt controller */
+    uint32_t exccode; /* clic irq encode */
 };
 
 OBJECT_DECLARE_TYPE(RISCVCPU, RISCVCPUClass,
@@ -261,6 +334,8 @@ struct RISCVCPUClass {
     /*< public >*/
     DeviceRealize parent_realize;
     DeviceReset parent_reset;
+    uint64_t mrvbr;
+    uint64_t mrmr;
 };
 
 /**
@@ -277,6 +352,7 @@ struct RISCVCPU {
     CPURISCVState env;
 
     char *dyn_csr_xml;
+    char *dyn_vreg_xml;
 
     /* Configuration Settings */
     struct {
@@ -293,19 +369,24 @@ struct RISCVCPU {
         bool ext_u;
         bool ext_h;
         bool ext_v;
+        bool ext_p;
         bool ext_counters;
         bool ext_ifencei;
         bool ext_icsr;
+        bool ext_psfoperand;
+        bool ext_thead;
 
         char *priv_spec;
         char *user_spec;
         char *bext_spec;
         char *vext_spec;
+        char *pext_spec;
         uint16_t vlen;
         uint16_t elen;
         bool mmu;
         bool pmp;
         bool epmp;
+        bool fpu;
         uint64_t resetvec;
     } cfg;
 };

@@ -54,3 +54,11 @@ config SSE_TIMER
 
 config AVR_TIMER16
     bool
+
+config CSKY_CORET
+    bool
+    select PTIMER
+
+config CSKY_TIMER
+    bool
+    select PTIMER
