@@ -44,6 +44,9 @@
 #include "hw/pci/pci.h"
 #include "hw/pci-host/gpex.h"
 #include "hw/display/ramfb.h"
+#include "hw/riscv/xmmuv1.h"
+#include "net/net.h"
+
 
 /*
  * The virt machine physical address space used by some of the devices
@@ -84,10 +87,28 @@ static const MemMapEntry virt_memmap[] = {
     [VIRT_FLASH] =       { 0x20000000,     0x4000000 },
     [VIRT_IMSIC_M] =     { 0x24000000, VIRT_IMSIC_MAX_SIZE },
     [VIRT_IMSIC_S] =     { 0x28000000, VIRT_IMSIC_MAX_SIZE },
+    [VIRT_XMMU] =        { 0x2c000000,       0x20000 },
     [VIRT_PCIE_ECAM] =   { 0x30000000,    0x10000000 },
     [VIRT_PCIE_MMIO] =   { 0x40000000,    0x40000000 },
     [VIRT_DRAM] =        { 0x80000000,           0x0 },
 };
+
+static void create_xmmu(MachineState *machine,
+                        PCIBus *bus,  qemu_irq irq)
+{
+    hwaddr base = virt_memmap[VIRT_XMMU].base;
+    DeviceState *dev;
+
+    dev = qdev_new("riscv-xmmuv1");
+
+    object_property_set_link(OBJECT(dev), "primary-bus", OBJECT(bus),
+                             &error_abort);
+    qdev_prop_set_uint64(dev, "rsiddiv", 8);
+    qdev_prop_set_uint64(dev, "irq", XMMU_IRQ);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, irq);
+}
 
 /* PCIe high mmio is fixed for RV32 */
 #define VIRT32_HIGH_PCIE_MMIO_BASE  0x300000000ULL
@@ -909,6 +930,23 @@ static void create_fdt_uart(RISCVVirtState *s, const MemMapEntry *memmap,
     g_free(name);
 }
 
+static void create_fdt_xmmu(RISCVVirtState *s, const MemMapEntry *memmap,
+                            uint32_t irq_mmio_phandle)
+{
+    char *name;
+    MachineState *mc = MACHINE(s);
+
+    name = g_strdup_printf("/soc/xmmu@%lx", (long)memmap[VIRT_XMMU].base);
+    qemu_fdt_add_subnode(mc->fdt, name);
+    qemu_fdt_setprop_string(mc->fdt, name, "compatible", "xuantie-iommu");
+    qemu_fdt_setprop_cells(mc->fdt, name, "reg",
+        0x0, memmap[VIRT_XMMU].base,
+        0x0, memmap[VIRT_XMMU].size);
+    qemu_fdt_setprop_cell(mc->fdt, name, "interrupt-parent", irq_mmio_phandle);
+    qemu_fdt_setprop_cell(mc->fdt, name, "interrupts", XMMU_IRQ);
+    g_free(name);
+}
+
 static void create_fdt_rtc(RISCVVirtState *s, const MemMapEntry *memmap,
                            uint32_t irq_mmio_phandle)
 {
@@ -993,6 +1031,8 @@ static void create_fdt(RISCVVirtState *s, const MemMapEntry *memmap,
 
     create_fdt_uart(s, memmap, irq_mmio_phandle);
 
+    create_fdt_xmmu(s, memmap, irq_mmio_phandle);
+
     create_fdt_rtc(s, memmap, irq_mmio_phandle);
 
     create_fdt_flash(s, memmap);
@@ -1015,6 +1055,7 @@ static inline DeviceState *gpex_pcie_init(MemoryRegion *sys_mem,
     MemoryRegion *ecam_alias, *ecam_reg;
     MemoryRegion *mmio_alias, *high_mmio_alias, *mmio_reg;
     qemu_irq irq;
+    PCIHostState *pci;
     int i;
 
     dev = qdev_new(TYPE_GPEX_HOST);
@@ -1049,6 +1090,18 @@ static inline DeviceState *gpex_pcie_init(MemoryRegion *sys_mem,
         gpex_set_irq_num(GPEX_HOST(dev), i, PCIE_IRQ + i);
     }
 
+    pci = PCI_HOST_BRIDGE(dev);
+    if (pci->bus) {
+        for (i = 0; i < nb_nics; i++) {
+            NICInfo *nd = &nd_table[i];
+
+            if (!nd->model) {
+                nd->model = g_strdup("virtio");
+            }
+
+            pci_nic_init_nofail(nd, pci->bus, nd->model, NULL);
+        }
+    }
     return dev;
 }
 
@@ -1392,6 +1445,7 @@ static void virt_machine_init(MachineState *machine)
             qdev_get_gpio_in(DEVICE(virtio_irqchip), VIRTIO_IRQ + i));
     }
 
+    DeviceState *pcidev =
     gpex_pcie_init(system_memory,
                    memmap[VIRT_PCIE_ECAM].base,
                    memmap[VIRT_PCIE_ECAM].size,
@@ -1401,6 +1455,9 @@ static void virt_machine_init(MachineState *machine)
                    virt_high_pcie_memmap.size,
                    memmap[VIRT_PCIE_PIO].base,
                    DEVICE(pcie_irqchip));
+
+    PCIHostState *pci = PCI_HOST_BRIDGE(pcidev);
+    create_xmmu(machine, pci->bus, qdev_get_gpio_in(DEVICE(mmio_irqchip), XMMU_IRQ));
 
     serial_mm_init(system_memory, memmap[VIRT_UART0].base,
         0, qdev_get_gpio_in(DEVICE(mmio_irqchip), UART0_IRQ), 399193,

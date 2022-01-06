@@ -13,6 +13,9 @@
 
 #include "qemu/bitops.h"
 
+#define REG64(reg, addr)                                                  \
+    enum { A_ ## reg = (addr) };                                          \
+    enum { R_ ## reg = (addr) / 8 };
 /* Define constants for a 32 bit register */
 
 /* This macro will define A_FOO, for the byte address of a register
